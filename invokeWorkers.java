@@ -1,3 +1,4 @@
+import java.io.File;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -16,6 +17,19 @@ public class invokeWorkers implements Runnable
     
     public void run()
     {
+        File dpath = new File("Input");
+        String arr[] = dpath.list();
+        int x = arr[arr.length - 1].length() - 11;
+        String f = "";
+        while(arr[arr.length - 1].charAt(x) != '-'){
+            f = f + arr[arr.length - 1].charAt(x);
+            x--;
+        }
+        String se = "";
+        for(int i = f.length() - 1 ; i>=0; i--){
+            se = se + f.charAt(i);
+        }
+        secondLevelThreads = Integer.parseInt(se);
         for(int i=0; i < secondLevelThreads ; i++)
         {
             Runnable runnableTask = new sendQuery()  ;    //  Pass arg, if any to constructor sendQuery(arg)

@@ -15,183 +15,203 @@ import java.sql.Statement;
 import java.util.StringTokenizer;
 import java.io.*;
 import java.io.File;
+import java.util.Random;
+import java.text.SimpleDateFormat;
 
-class QueryRunner implements Runnable
+class ProcessQuery implements Runnable
 {
-    //  Declare socket for client access
     protected Socket socketConnection;
 
-    public QueryRunner(Socket clientSocket)
+    public ProcessQuery(Socket clientSocket)
     {
         this.socketConnection =  clientSocket;
     }
 
-    public void run()
+    public synchronized void run()
     {
+        
+        // Configurations
         String url = "jdbc:postgresql://localhost:5432/dbms_project";
         String user = "postgres";
         String password = "123456";
         Connection c = null;
         Statement stmt = null;
-      try
-        {
-            Class.forName("org.postgresql.Driver");
-            c = DriverManager.getConnection(url, user, password);
-            System.out.println("Opened database successfully");
-            stmt = c.createStatement();
-            //  Reading data from client
-            InputStreamReader inputStream = new InputStreamReader(socketConnection
-                                                                  .getInputStream()) ;
-            BufferedReader bufferedInput = new BufferedReader(inputStream) ;
-            OutputStreamWriter outputStream = new OutputStreamWriter(socketConnection
-                                                                     .getOutputStream()) ;
-            BufferedWriter bufferedOutput = new BufferedWriter(outputStream) ;
-            PrintWriter printWriter = new PrintWriter(bufferedOutput, true) ;
-            String clientCommand = "" ;
-            String sql = "ALTER DATABASE dbms_project SET DEFAULT_TRANSACTION_ISOLATION TO 'serializable';";
-            //stmt.executeQuery(sql);
-            // Read client query from the socket endpoint
-            clientCommand = bufferedInput.readLine(); 
 
-            while( ! clientCommand.equals("#")){
+        try
+            {
+
+                Class.forName("org.postgresql.Driver");
+                c = DriverManager.getConnection(url, user, password);
+                System.out.println("Opened database successfully");
+                stmt = c.createStatement();
                 
-                System.out.println("Recieved data <" + clientCommand + "> from client : " 
-                                    + socketConnection.getRemoteSocketAddress().toString());
-
-                String s = "";
-                s = clientCommand;
-                StringTokenizer st = new StringTokenizer(s, " ");
-                int a = Integer.parseInt(st.nextToken());
-                String[] arr = new String[a];
-                for (int i = 0; i < a; i++) {
-                    arr[i] = (st.nextToken());
-                    if (i != a - 1) {
-                        arr[i] = arr[i].substring(0, arr[i].length() - 1);
-                    }
-                }
-                int trNo = Integer.parseInt(st.nextToken());
-                String tDate = st.nextToken();
-                String type = st.nextToken();
-                int remaining = 0;
-                if(type.equals("AC")){
-                    sql = "select ac_remaining as ac from trains_running where doj = ? and train_number = ?";
-                    PreparedStatement stmt1 = c.prepareStatement(sql);
-                    stmt1.setInt(2, trNo);
-                    stmt1.setString(1, tDate);
-
-                    ResultSet rs = stmt1.executeQuery();
-                    
-                    while(rs.next()){
-                        remaining = rs.getInt("ac");
-                    }
-                    System.out.println(remaining);
-                    if(remaining < a){
-                        printWriter.println("No ticket booked\n");
-                        printWriter.println("-------------------------------------------------------------------------------------------\n");
-                        System.out.println("No ticket booked "+ trNo);
-                        clientCommand = bufferedInput.readLine(); 
-                        continue;
-                    }
-                    sql = "UPDATE trains_running set ac_remaining = ? where doj = ? and train_number = ?;";
-                    PreparedStatement stmt2 = c.prepareStatement(sql);
-                    stmt2.setInt(1, remaining - a);
-                    stmt2.setString(2, tDate);
-                    stmt2.setInt(3, trNo);
-                    stmt2.execute();
-                }
-                else{
-                    sql = "select sl_remaining as sl from trains_running where doj = ? and train_number = ?";
-                    PreparedStatement stmt1 = c.prepareStatement(sql);
-                    stmt1.setInt(2, trNo);
-                    stmt1.setString(1, tDate);
-
-                    ResultSet rs = stmt1.executeQuery();
-                    while(rs.next()){
-                        remaining = rs.getInt("sl");
-                    }
-                    System.out.println(remaining);
-
-                    if(remaining < a){
-                        printWriter.println("No ticket booked\n");
-                        printWriter.println("-------------------------------------------------------------------------------------------\n");
-                        System.out.println("No ticket booked "+ trNo);
-                        clientCommand = bufferedInput.readLine(); 
-                        continue;
-                    }
-                    sql = "UPDATE trains_running set sl_remaining = ? where doj = ? and train_number = ?;";
-                    PreparedStatement stmt2 = c.prepareStatement(sql);
-                    stmt2.setInt(1, remaining - a);
-                    stmt2.setString(2, tDate);
-                    stmt2.setInt(3, trNo);
-                    stmt2.execute();
-                }
+                //  Reading data from client
+                InputStreamReader inputStream = new InputStreamReader(socketConnection
+                                                                    .getInputStream()) ;
+                BufferedReader bufferedInput = new BufferedReader(inputStream) ;
+                OutputStreamWriter outputStream = new OutputStreamWriter(socketConnection
+                                                                        .getOutputStream()) ;
+                BufferedWriter bufferedOutput = new BufferedWriter(outputStream) ;
+                PrintWriter printWriter = new PrintWriter(bufferedOutput, true) ;
+                String clientCommand = "" ;
+                String sql = " ";
                 
-                int date = (tDate.charAt(8)-'0') * 10 + tDate.charAt(9) - '0';
-                int month = (tDate.charAt(5)-'0') * 10 + tDate.charAt(6) - '0';
-                int year = (tDate.charAt(2)-'0') * 10 + tDate.charAt(3) - '0';
-                String pnr = "" + trNo + ((remaining - 1)/18 + 1) + (((remaining-1) % 18) + 1) + date + month + year;
-                while(pnr.length() < 12){
-                    pnr = pnr + '_';
-                }
-                
-                
-                for(int i = 0; i < a; i++){
-                    PreparedStatement stmt1 = c.prepareStatement("call booking(?,?,?,?,?,?);");
-                    stmt1.setInt(1,remaining--);
-                    stmt1.setString(2, pnr);
-                    stmt1.setString(3,arr[i]);
-                    stmt1.setInt(4,trNo);
-                    stmt1.setString(5,tDate);
-                    stmt1.setString(6,type);                    
-                    stmt1.execute();
-                    stmt1.close();
-                }   
-
-                sql = "select * from tickets_booked where pnr = ?";
-                PreparedStatement stmt1 = c.prepareStatement(sql);
-                stmt1.setString(1, pnr);                
-
-                ResultSet rs = stmt1.executeQuery();
-                printWriter.println("PNR\t\t\t\tName\tCoach\tBerth\tType\tTrainNo\tDate\n");
-                while (rs.next()) {
-                    String pnr_ = rs.getString("pnr");
-                    String name = rs.getString("name");
-                    int coach  = rs.getInt("coach_number");
-                    int berth  = rs.getInt("berth_number");
-                    String b_type = rs.getString("berth_type");
-                    int trNum  = rs.getInt("train_number");
-                    String doj = rs.getString("doj");
-                    printWriter.println(pnr_+ "\t" + name + "\t" + coach + "\t" + berth + "\t" + b_type + "\t" + trNum +"\t" + doj+"\n");                   
-                }
-                
-                printWriter.println("-------------------------------------------------------------------------------------------\n");
-                rs.close();
-                stmt1.close();
+                // Read client query from the socket endpoint
                 clientCommand = bufferedInput.readLine(); 
+
+                while(!clientCommand.equals("#")){
+                    String str = clientCommand;
+                    StringTokenizer sToken = new StringTokenizer(str, " ");
+                    int a = Integer.parseInt(sToken.nextToken());
+                    String[] name_array = new String[a];
+
+                    int i=0;
+                    while (i < a) {
+                        name_array[i] = (sToken.nextToken());
+                        if (i != a - 1) {
+                            name_array[i] = name_array[i].substring(0, name_array[i].length() - 1);
+                        }
+                        i++;
+                    }
+                
+                    int trainNum = Integer.parseInt(sToken.nextToken());
+                    String journeyDate = sToken.nextToken();
+                    String coachType = sToken.nextToken();
+                    int filledSeats = -1;
+                    int totalSeats = 0;
+                    int remainingSeats = 0;
+                    String pnr = "";
+            
+                    int flag = 0;
+
+                    while(true){
+                        try{
+                            String classType = "";
+                            if(coachType.equals("AC")) {
+                                classType="ac";
+                            }
+                            else {
+                                classType="sl";
+                            }
+
+                            sql = "select " + classType + "_filled as " + classType + "1, " + classType + "_total as " + classType + "2 from seats_filled where doj = ? and train_no = ?";
+                            PreparedStatement stmts = c.prepareStatement(sql);
+                            stmts.setInt(2, trainNum);
+                            stmts.setString(1, journeyDate);
+                            ResultSet res = stmts.executeQuery();
+                            
+                            while(res.next()){
+                                filledSeats = res.getInt(classType + "1");
+                                totalSeats = res.getInt(classType + "2");
+                            }
+
+                            remainingSeats = totalSeats - filledSeats;
+                            // System.out.println(filledSeats);
+                            
+                            if(remainingSeats < a) {
+                                printWriter.println("No ticket booked\n");
+                                printWriter.println("-------------------------------------------------------------------------------------------\n");
+                                flag = 1;
+                                break;
+                            }
+
+                            sql = "UPDATE seats_filled set " + classType + "_filled = ? where doj = ? and train_no = ?;";
+                            PreparedStatement stmts2 = c.prepareStatement(sql);
+                            stmts2.setInt(1, filledSeats + a);
+                            stmts2.setString(2, journeyDate);
+                            stmts2.setInt(3, trainNum);
+                            
+                            while(true){
+                                try{
+                                    stmts2.execute();
+                                    break;
+                                }
+                                catch(Exception ee){
+                                    System.err.println(ee.getMessage());
+                                    continue;
+                                }
+                            }
+
+                            Random rand = new Random();
+                            pnr = "" + rand.nextInt(10000);
+                            if(coachType.equals("AC")){
+                                pnr = pnr + "0";
+                            }
+                            else{
+                                pnr = pnr + "1";
+                            }
+                            int date = (journeyDate.charAt(8)-'0') * 10 + journeyDate.charAt(9) - '0';
+                            int month = (journeyDate.charAt(5)-'0') * 10 + journeyDate.charAt(6) - '0';
+                            int year = (journeyDate.charAt(2)-'0') * 10 + journeyDate.charAt(3) - '0';
+                            pnr = pnr + trainNum + ((filledSeats - 1)/18 + 1) + (((filledSeats-1) % 18) + 1) + date + month + year;                            
+
+                            for(i = 0; i < a; i++){
+                                PreparedStatement stmt1 = c.prepareStatement("call booking(?,?,?,?,?,?);");
+                                stmt1.setInt(1,filledSeats++);
+                                stmt1.setString(2, pnr);
+                                stmt1.setString(3,name_array[i]);
+                                stmt1.setInt(4,trainNum);
+                                stmt1.setString(5,journeyDate);
+                                stmt1.setString(6,coachType);
+                                stmt1.execute();                        
+                            }
+                            flag = 1;
+                            break;  
+                        }catch(Exception ee){
+                            System.err.println(ee.getMessage());
+                        }
+                    } 
+                    if(flag == 0){
+                        clientCommand = bufferedInput.readLine();
+                        continue;
+                    }
+
+                    sql = "select * from tickets_data where pnr = ?";
+                    PreparedStatement stmt1 = c.prepareStatement(sql);
+                    stmt1.setString(1, pnr);                
+
+                    ResultSet rs = stmt1.executeQuery();
+                    printWriter.println("PNR\t\t\t\tName\tCoach\tBerth\tType\tTrainNo\tDate\n");
+                    while (rs.next()) {
+                        String pnr_ = rs.getString("pnr");
+                        String passenger_name = rs.getString("passenger_name");
+                        int coachNumber  = rs.getInt("coach_number");
+                        int berthNumber  = rs.getInt("berth_number");
+                        String berthType = rs.getString("berth_type");
+                        int trNum  = rs.getInt("train_number");
+                        String doj = rs.getString("doj");
+                        printWriter.println(pnr_+ "\t" + passenger_name + "\t" + coachNumber + "\t\t" + berthNumber + "\t\t" + berthType + "\t" + trNum +"\t" + doj+"\n");                   
+                    }
+                
+                    
+                    
+                    printWriter.println("-------------------------------------------------------------------------------------------\n");
+                    rs.close();
+                    stmt1.close();
+                    clientCommand = bufferedInput.readLine(); 
+                }
+
+                inputStream.close();
+                bufferedInput.close();
+                outputStream.close();
+                bufferedOutput.close();
+                printWriter.close();
+                socketConnection.close();
             }
-            inputStream.close();
-            bufferedInput.close();
-            outputStream.close();
-            bufferedOutput.close();
-            printWriter.close();
-            socketConnection.close();
+            catch(Exception e)
+            {
+                System.err.println(e.getMessage());
+                return;
+            }
         }
-        catch(Exception e)
-        {
-            return;
-        }
-    }
 }
 
-/**
- * Main Class to controll the program flow
- */
-public class ServiceModule 
-{
+
+public class ServiceModule{
     // Server listens to port
     static int serverPort = 7008;
     // Max no of parallel requests the server can process
-    static int numServerCores = 5 ;         
+    static int numServerCores = 5;         
     //------------ Main----------------------
     public static void main(String[] args) throws IOException 
     {    
@@ -212,7 +232,7 @@ public class ServiceModule
                                     + socketConnection.getRemoteSocketAddress().toString() 
                                     + "\n");
                 //  Create a runnable task
-                Runnable runnableTask = new QueryRunner(socketConnection);
+                Runnable runnableTask = new ProcessQuery(socketConnection);
                 //  Submit task for execution   
                 executorService.submit(runnableTask);   
             }

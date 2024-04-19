@@ -11,7 +11,7 @@ import java.util.Scanner;
 
 class sendQuery implements Runnable 
 {   /**********************/
-     int sockPort = 7008 ;
+     int sockPort = 7008;
     /*********************/
     sendQuery()
     {
